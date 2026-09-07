@@ -7,7 +7,7 @@ from typing import Any
 
 from groq import Groq
 
-from prompts import SYSTEM_PROMPT, build_analysis_prompt, build_resume_improvement_prompt
+from prompts import SYSTEM_PROMPT, build_analysis_prompt, build_resume_additions_prompt
 
 
 class AnalysisError(Exception):
@@ -128,10 +128,10 @@ def analyze_resume(resume_text: str, job_description: str, api_key: str, model: 
         raise AnalysisError(str(error)) from error
 
 
-def create_improved_resume(
+def create_resume_additions(
     resume_text: str, job_description: str, api_key: str, model: str = MODEL
 ) -> dict[str, Any]:
-    """Create a structured resume automatically using only the uploaded resume."""
+    """Return only source-evidenced keywords that can be appended safely."""
     try:
         client = Groq(api_key=api_key)
         selected_model = _select_model(client, model)
@@ -139,17 +139,18 @@ def create_improved_resume(
             model=selected_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_resume_improvement_prompt(resume_text, job_description)},
+                {"role": "user", "content": build_resume_additions_prompt(resume_text, job_description)},
             ],
             response_format={"type": "json_object"},
             temperature=0.1,
         )
         content = response.choices[0].message.content
         if not content:
-            raise AnalysisError("Groq returned an empty improved resume.")
+            raise AnalysisError("Groq returned an empty resume update.")
         data = json.loads(content)
-        if not isinstance(data, dict) or not isinstance(data.get("personal_details"), dict):
-            raise AnalysisError("The AI returned an invalid improved-resume format. Please try again.")
+        if not isinstance(data, dict) or not isinstance(data.get("skills_to_add"), list):
+            raise AnalysisError("The AI returned an invalid resume-update format. Please try again.")
+        data["skills_to_add"] = [str(skill).strip() for skill in data["skills_to_add"] if str(skill).strip()]
         return data
     except AnalysisError:
         raise
