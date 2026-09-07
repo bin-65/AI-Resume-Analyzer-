@@ -1,245 +1,102 @@
-"""Create downloadable DOCX and PDF resumes from structured, truthful resume data."""
+"""Minimal, source-preserving DOCX edits for the resume analyzer."""
 
 from __future__ import annotations
 
+from copy import deepcopy
 from io import BytesIO
-from typing import Any, Iterable
+from typing import Iterable
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, RGBColor
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
-from reportlab.pdfbase.pdfmetrics import stringWidth
+from docx.table import Table, _Cell
+from docx.text.paragraph import Paragraph
 
 
-BLUE = "1F4E79"
+class ResumeUpdateError(Exception):
+    """Raised when a source-preserving update cannot be made safely."""
 
 
-def _text(value: Any) -> str:
-    return str(value).strip() if value else ""
+SKILLS_HEADINGS = {"skills", "technical skills", "core skills", "key skills", "competencies"}
 
 
-def _items(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [_text(item) for item in value if _text(item)]
+def _paragraphs_in_cell(cell: _Cell) -> Iterable[Paragraph]:
+    for paragraph in cell.paragraphs:
+        yield paragraph
+    for table in cell.tables:
+        yield from _paragraphs_in_table(table)
 
 
-def _records(value: Any) -> list[dict[str, Any]]:
-    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+def _paragraphs_in_table(table: Table) -> Iterable[Paragraph]:
+    for row in table.rows:
+        for cell in row.cells:
+            yield from _paragraphs_in_cell(cell)
 
 
-def _contact_line(details: dict[str, Any]) -> str:
-    return " | ".join(
-        value for value in (_text(details.get(field)) for field in ("email", "phone", "location", "linkedin")) if value
-    )
+def _all_paragraphs(document: Document) -> list[Paragraph]:
+    paragraphs = list(document.paragraphs)
+    for table in document.tables:
+        paragraphs.extend(_paragraphs_in_table(table))
+    for section in document.sections:
+        paragraphs.extend(section.header.paragraphs + section.footer.paragraphs)
+    return paragraphs
 
 
-def _docx_heading(document: Document, heading: str) -> None:
-    paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = Pt(10)
-    paragraph.paragraph_format.space_after = Pt(3)
-    run = paragraph.add_run(heading.upper())
-    run.bold = True
-    run.font.size = Pt(10)
-    run.font.color.rgb = RGBColor(31, 78, 121)
+def _normalise(value: str) -> str:
+    return " ".join(value.lower().replace(":", " ").split())
 
 
-def _docx_bullets(document: Document, bullets: Iterable[str]) -> None:
-    for bullet in bullets:
-        paragraph = document.add_paragraph(style="List Bullet")
-        paragraph.paragraph_format.space_after = Pt(1)
-        paragraph.add_run(bullet)
+def _find_skills_paragraph(paragraphs: list[Paragraph]) -> Paragraph | None:
+    """Find a paragraph containing the existing inline skills list."""
+    for index, paragraph in enumerate(paragraphs):
+        text = _normalise(paragraph.text)
+        if any(text.startswith(f"{heading} ") for heading in SKILLS_HEADINGS):
+            return paragraph
+        if text in SKILLS_HEADINGS:
+            for candidate in paragraphs[index + 1 :]:
+                if candidate.text.strip():
+                    return candidate
+    return None
 
 
-def create_docx(resume: dict[str, Any]) -> bytes:
-    """Return a clean one-column Word resume as bytes."""
-    document = Document()
-    section = document.sections[0]
-    section.top_margin = Inches(0.55)
-    section.bottom_margin = Inches(0.55)
-    section.left_margin = Inches(0.65)
-    section.right_margin = Inches(0.65)
+def _copy_run_style(source_run, new_run) -> None:
+    """Match the existing paragraph style when appending new text."""
+    if source_run is not None and source_run._r.rPr is not None:
+        new_run._r.insert(0, deepcopy(source_run._r.rPr))
 
-    normal = document.styles["Normal"]
-    normal.font.name = "Aptos"
-    normal.font.size = Pt(10)
-    normal.paragraph_format.space_after = Pt(3)
 
-    details = resume.get("personal_details", {}) if isinstance(resume.get("personal_details"), dict) else {}
-    name = _text(details.get("name")) or "Resume"
-    title = _text(resume.get("headline"))
-    name_paragraph = document.add_paragraph()
-    name_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    name_run = name_paragraph.add_run(name)
-    name_run.bold = True
-    name_run.font.size = Pt(20)
-    name_run.font.color.rgb = RGBColor(31, 78, 121)
-    if title:
-        paragraph = document.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        paragraph.add_run(title).italic = True
-    contact = _contact_line(details)
-    if contact:
-        paragraph = document.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        paragraph.add_run(contact).font.size = Pt(9)
+def _unique_new_skills(skills: Iterable[str], paragraph_text: str) -> list[str]:
+    existing = _normalise(paragraph_text)
+    result: list[str] = []
+    for skill in skills:
+        clean = str(skill).strip()
+        if clean and _normalise(clean) not in existing and clean not in result:
+            result.append(clean)
+    return result
 
-    summary = _text(resume.get("professional_summary"))
-    if summary:
-        _docx_heading(document, "Professional Summary")
-        document.add_paragraph(summary)
 
-    skills = _items(resume.get("skills"))
-    if skills:
-        _docx_heading(document, "Skills")
-        document.add_paragraph(" • ".join(skills))
+def update_docx_resume(source_bytes: bytes, skills_to_add: Iterable[str]) -> bytes:
+    """Append supported skills without rebuilding or removing original CV content.
 
-    experience = _records(resume.get("experience"))
-    if experience:
-        _docx_heading(document, "Experience")
-        for item in experience:
-            paragraph = document.add_paragraph()
-            paragraph.paragraph_format.space_before = Pt(3)
-            role = " | ".join(value for value in (_text(item.get("title")), _text(item.get("company"))) if value)
-            dates = _text(item.get("dates"))
-            run = paragraph.add_run(role)
-            run.bold = True
-            if dates:
-                paragraph.add_run(f"  ({dates})")
-            _docx_bullets(document, _items(item.get("bullets")))
+    Existing paragraphs, images, fonts, colors, page size, headers, footers, and
+    sections are preserved. The only edit is an append to the existing Skills list.
+    """
+    try:
+        document = Document(BytesIO(source_bytes))
+    except Exception as error:
+        raise ResumeUpdateError("The source DOCX could not be opened.") from error
 
-    education = _records(resume.get("education"))
-    if education:
-        _docx_heading(document, "Education")
-        for item in education:
-            paragraph = document.add_paragraph()
-            degree = " | ".join(value for value in (_text(item.get("degree")), _text(item.get("institution"))) if value)
-            paragraph.add_run(degree).bold = True
-            dates = _text(item.get("dates"))
-            if dates:
-                paragraph.add_run(f"  ({dates})")
-            details_text = _text(item.get("details"))
-            if details_text:
-                document.add_paragraph(details_text)
+    skills_paragraph = _find_skills_paragraph(_all_paragraphs(document))
+    if skills_paragraph is None:
+        raise ResumeUpdateError(
+            "A Skills section was not found, so the original resume was not changed."
+        )
 
-    projects = _records(resume.get("projects"))
-    if projects:
-        _docx_heading(document, "Projects")
-        for item in projects:
-            paragraph = document.add_paragraph()
-            paragraph.add_run(_text(item.get("name"))).bold = True
-            details_text = _text(item.get("details"))
-            if details_text:
-                paragraph.add_run(f" - {details_text}")
-            _docx_bullets(document, _items(item.get("bullets")))
-
-    certifications = _items(resume.get("certifications"))
-    if certifications:
-        _docx_heading(document, "Certifications")
-        _docx_bullets(document, certifications)
-
-    for section_data in _records(resume.get("additional_sections")):
-        title = _text(section_data.get("title"))
-        items = _items(section_data.get("items"))
-        if title and items:
-            _docx_heading(document, title)
-            _docx_bullets(document, items)
+    additions = _unique_new_skills(skills_to_add, skills_paragraph.text)
+    if additions:
+        separator = ", " if skills_paragraph.text.strip() else ""
+        previous_run = skills_paragraph.runs[-1] if skills_paragraph.runs else None
+        run = skills_paragraph.add_run(separator + ", ".join(additions))
+        _copy_run_style(previous_run, run)
 
     output = BytesIO()
     document.save(output)
-    return output.getvalue()
-
-
-def _pdf_styles() -> dict[str, ParagraphStyle]:
-    styles = getSampleStyleSheet()
-    return {
-        "name": ParagraphStyle("ResumeName", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=colors.HexColor(f"#{BLUE}"), alignment=TA_CENTER, spaceAfter=3),
-        "center": ParagraphStyle("ResumeCenter", parent=styles["Normal"], fontName="Helvetica", fontSize=9, leading=11, alignment=TA_CENTER, spaceAfter=2),
-        "body": ParagraphStyle("ResumeBody", parent=styles["Normal"], fontName="Helvetica", fontSize=9.5, leading=13, alignment=TA_LEFT, spaceAfter=3),
-        "heading": ParagraphStyle("ResumeHeading", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=10, leading=13, textColor=colors.HexColor(f"#{BLUE}"), spaceBefore=9, spaceAfter=3),
-        "role": ParagraphStyle("ResumeRole", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.5, leading=13, spaceBefore=2, spaceAfter=1),
-        "bullet": ParagraphStyle("ResumeBullet", parent=styles["Normal"], fontName="Helvetica", fontSize=9.5, leading=12, leftIndent=13, firstLineIndent=-7, spaceAfter=1),
-    }
-
-
-def _paragraph(value: str, style: ParagraphStyle) -> Paragraph:
-    safe = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return Paragraph(safe, style)
-
-
-def _pdf_heading(story: list[Any], styles: dict[str, ParagraphStyle], title: str) -> None:
-    story.append(_paragraph(title.upper(), styles["heading"]))
-
-
-def _pdf_bullets(story: list[Any], styles: dict[str, ParagraphStyle], bullets: Iterable[str]) -> None:
-    for bullet in bullets:
-        story.append(_paragraph(f"• {bullet}", styles["bullet"]))
-
-
-def create_pdf(resume: dict[str, Any]) -> bytes:
-    """Return a matching ATS-friendly PDF resume as bytes."""
-    output = BytesIO()
-    document = SimpleDocTemplate(output, pagesize=A4, leftMargin=0.65 * inch, rightMargin=0.65 * inch, topMargin=0.55 * inch, bottomMargin=0.55 * inch)
-    styles = _pdf_styles()
-    story: list[Any] = []
-    details = resume.get("personal_details", {}) if isinstance(resume.get("personal_details"), dict) else {}
-    story.append(_paragraph(_text(details.get("name")) or "Resume", styles["name"]))
-    if _text(resume.get("headline")):
-        story.append(_paragraph(_text(resume.get("headline")), styles["center"]))
-    contact = _contact_line(details)
-    if contact:
-        story.append(_paragraph(contact, styles["center"]))
-
-    summary = _text(resume.get("professional_summary"))
-    if summary:
-        _pdf_heading(story, styles, "Professional Summary")
-        story.append(_paragraph(summary, styles["body"]))
-    skills = _items(resume.get("skills"))
-    if skills:
-        _pdf_heading(story, styles, "Skills")
-        story.append(_paragraph(" • ".join(skills), styles["body"]))
-    experience = _records(resume.get("experience"))
-    if experience:
-        _pdf_heading(story, styles, "Experience")
-        for item in experience:
-            role = " | ".join(value for value in (_text(item.get("title")), _text(item.get("company"))) if value)
-            dates = _text(item.get("dates"))
-            story.append(_paragraph(f"{role}{f' ({dates})' if dates else ''}", styles["role"]))
-            _pdf_bullets(story, styles, _items(item.get("bullets")))
-    education = _records(resume.get("education"))
-    if education:
-        _pdf_heading(story, styles, "Education")
-        for item in education:
-            value = " | ".join(part for part in (_text(item.get("degree")), _text(item.get("institution"))) if part)
-            dates = _text(item.get("dates"))
-            story.append(_paragraph(f"{value}{f' ({dates})' if dates else ''}", styles["role"]))
-            if _text(item.get("details")):
-                story.append(_paragraph(_text(item.get("details")), styles["body"]))
-    projects = _records(resume.get("projects"))
-    if projects:
-        _pdf_heading(story, styles, "Projects")
-        for item in projects:
-            value = _text(item.get("name"))
-            if _text(item.get("details")):
-                value = f"{value} - {_text(item.get('details'))}"
-            story.append(_paragraph(value, styles["role"]))
-            _pdf_bullets(story, styles, _items(item.get("bullets")))
-    certifications = _items(resume.get("certifications"))
-    if certifications:
-        _pdf_heading(story, styles, "Certifications")
-        _pdf_bullets(story, styles, certifications)
-    for section_data in _records(resume.get("additional_sections")):
-        title = _text(section_data.get("title"))
-        items = _items(section_data.get("items"))
-        if title and items:
-            _pdf_heading(story, styles, title)
-            _pdf_bullets(story, styles, items)
-
-    document.build(story)
     return output.getvalue()
