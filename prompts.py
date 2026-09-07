@@ -34,3 +34,38 @@ Return exactly this JSON structure:
 }}
 
 Scoring guidance: skills 40%, experience/responsibilities 30%, ATS keywords 20%, education/other requirements 10%. Each breakdown value is 0-100; overall is the weighted score rounded to a whole number. Use Strong match for 80-100, Moderate match for 60-79, Low match below 60. Keep lists concise."""
+
+
+def build_resume_improvement_prompt(resume_text: str, job_description: str) -> str:
+    """Ask the model for a truthful, structured ATS-friendly resume."""
+    return f"""Create an improved, ATS-friendly resume using the source resume and target job description below.
+
+SOURCE RESUME:
+---
+{resume_text}
+---
+
+TARGET JOB DESCRIPTION:
+---
+{job_description}
+---
+
+Important rules:
+- Use only facts stated in the source resume.
+- Do not invent job titles, employers, dates, degrees, certifications, skills, metrics, or responsibilities.
+- Improve wording, ordering, and ATS relevance, but keep uncertain or absent fields empty.
+- Include a keyword only when the candidate's information supports it.
+- Keep bullet points concise and professional.
+
+Return valid JSON only in exactly this shape:
+{{
+  "personal_details": {{"name": "", "email": "", "phone": "", "location": "", "linkedin": ""}},
+  "headline": "",
+  "professional_summary": "",
+  "skills": [""],
+  "experience": [{{"title": "", "company": "", "dates": "", "bullets": [""]}}],
+  "education": [{{"degree": "", "institution": "", "dates": "", "details": ""}}],
+  "projects": [{{"name": "", "details": "", "bullets": [""]}}],
+  "certifications": [""],
+  "additional_sections": [{{"title": "", "items": [""]}}]
+}}"""
