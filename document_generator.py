@@ -86,16 +86,17 @@ def update_docx_resume(source_bytes: bytes, skills_to_add: Iterable[str]) -> byt
 
     skills_paragraph = _find_skills_paragraph(_all_paragraphs(document))
     if skills_paragraph is None:
-        raise ResumeUpdateError(
-            "A Skills section was not found, so the original resume was not changed."
-        )
+        # Never risk changing the source if there is no safe, named target section.
+        return source_bytes
 
     additions = _unique_new_skills(skills_to_add, skills_paragraph.text)
-    if additions:
-        separator = ", " if skills_paragraph.text.strip() else ""
-        previous_run = skills_paragraph.runs[-1] if skills_paragraph.runs else None
-        run = skills_paragraph.add_run(separator + ", ".join(additions))
-        _copy_run_style(previous_run, run)
+    if not additions:
+        return source_bytes
+
+    separator = ", " if skills_paragraph.text.strip() else ""
+    previous_run = skills_paragraph.runs[-1] if skills_paragraph.runs else None
+    run = skills_paragraph.add_run(separator + ", ".join(additions))
+    _copy_run_style(previous_run, run)
 
     output = BytesIO()
     document.save(output)
