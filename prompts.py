@@ -54,7 +54,7 @@ Important rules:
 - Use only facts stated in the source resume.
 - Do not infer or add a skill merely because it appears in the job description.
 - Do not rewrite, remove, summarize, or alter any existing resume content.
-- Keep the list short. If no supported skill needs adding, return an empty list.
+- Return every clearly supported, job-relevant skill that needs adding. If no supported skill needs adding, return an empty list.
 
 Return valid JSON only in exactly this shape:
 {{
