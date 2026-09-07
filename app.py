@@ -8,7 +8,8 @@ from typing import Any
 import streamlit as st
 from dotenv import load_dotenv
 
-from analyzer import AnalysisError, analyze_resume
+from analyzer import AnalysisError, analyze_resume, create_improved_resume
+from document_generator import create_docx, create_pdf
 from resume_parser import ResumeParseError, extract_resume_text, supported_file_types
 
 
@@ -81,6 +82,29 @@ def _show_results(result: dict[str, Any]) -> None:
         st.json(result)
 
 
+def _improved_resume_section() -> None:
+    """Show automatically generated resume downloads after analysis."""
+    st.divider()
+    if "improved_resume_docx" in st.session_state:
+        st.header("Your improved resume is ready")
+        st.write("It has been automatically reformatted and tailored using the information already present in your CV.")
+        left, right = st.columns(2)
+        left.download_button(
+            "Download Word resume",
+            data=st.session_state["improved_resume_docx"],
+            file_name="improved_resume.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        )
+        right.download_button(
+            "Download PDF resume",
+            data=st.session_state["improved_resume_pdf"],
+            file_name="improved_resume.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+
 def main() -> None:
     st.set_page_config(page_title="AI Resume Analyzer", page_icon="📄", layout="wide")
     st.title("AI Resume Analyzer")
@@ -111,7 +135,15 @@ def main() -> None:
                 resume_text = extract_resume_text(resume_file.getvalue(), resume_file.name)
             with st.spinner("Analyzing fit with Groq..."):
                 result = analyze_resume(resume_text, job_description, api_key, model)
+            with st.spinner("Automatically creating your improved resume..."):
+                structured_resume = create_improved_resume(resume_text, job_description, api_key, model)
+                improved_resume_docx = create_docx(structured_resume)
+                improved_resume_pdf = create_pdf(structured_resume)
             st.session_state["analysis"] = result
+            st.session_state["resume_text"] = resume_text
+            st.session_state["job_description"] = job_description
+            st.session_state["improved_resume_docx"] = improved_resume_docx
+            st.session_state["improved_resume_pdf"] = improved_resume_pdf
         except ResumeParseError as error:
             st.error(f"Could not read the resume: {error}")
         except AnalysisError as error:
@@ -119,6 +151,7 @@ def main() -> None:
 
     if "analysis" in st.session_state:
         _show_results(st.session_state["analysis"])
+        _improved_resume_section()
 
 
 if __name__ == "__main__":
