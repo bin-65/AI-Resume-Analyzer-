@@ -7,7 +7,7 @@ from typing import Any
 
 from groq import Groq
 
-from prompts import SYSTEM_PROMPT, build_analysis_prompt
+from prompts import SYSTEM_PROMPT, build_analysis_prompt, build_resume_improvement_prompt
 
 
 class AnalysisError(Exception):
@@ -120,6 +120,37 @@ def analyze_resume(resume_text: str, job_description: str, api_key: str, model: 
         result = _validate_result(json.loads(content))
         result["model_used"] = selected_model
         return result
+    except AnalysisError:
+        raise
+    except json.JSONDecodeError as error:
+        raise AnalysisError("Groq returned malformed JSON. Please try again.") from error
+    except Exception as error:
+        raise AnalysisError(str(error)) from error
+
+
+def create_improved_resume(
+    resume_text: str, job_description: str, api_key: str, model: str = MODEL
+) -> dict[str, Any]:
+    """Create a structured resume automatically using only the uploaded resume."""
+    try:
+        client = Groq(api_key=api_key)
+        selected_model = _select_model(client, model)
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": build_resume_improvement_prompt(resume_text, job_description)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise AnalysisError("Groq returned an empty improved resume.")
+        data = json.loads(content)
+        if not isinstance(data, dict) or not isinstance(data.get("personal_details"), dict):
+            raise AnalysisError("The AI returned an invalid improved-resume format. Please try again.")
+        return data
     except AnalysisError:
         raise
     except json.JSONDecodeError as error:
