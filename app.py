@@ -8,8 +8,8 @@ from typing import Any
 import streamlit as st
 from dotenv import load_dotenv
 
-from analyzer import AnalysisError, analyze_resume, create_improved_resume
-from document_generator import create_docx, create_pdf
+from analyzer import AnalysisError, analyze_resume, create_resume_additions
+from document_generator import ResumeUpdateError, update_docx_resume
 from resume_parser import ResumeParseError, extract_resume_text, supported_file_types
 
 
@@ -83,26 +83,20 @@ def _show_results(result: dict[str, Any]) -> None:
 
 
 def _improved_resume_section() -> None:
-    """Show automatically generated resume downloads after analysis."""
+    """Show the source-preserving DOCX download after analysis."""
     st.divider()
     if "improved_resume_docx" in st.session_state:
-        st.header("Your improved resume is ready")
-        st.write("It has been automatically reformatted and tailored using the information already present in your CV.")
-        left, right = st.columns(2)
-        left.download_button(
-            "Download Word resume",
+        st.header("Your updated resume is ready")
+        st.write("The original design, photo, text, colors, and page settings have been kept. Only supported skills were added to the existing Skills section.")
+        st.download_button(
+            "Download updated Word resume",
             data=st.session_state["improved_resume_docx"],
-            file_name="improved_resume.docx",
+            file_name="updated_resume.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
         )
-        right.download_button(
-            "Download PDF resume",
-            data=st.session_state["improved_resume_pdf"],
-            file_name="improved_resume.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+    elif "source_preservation_note" in st.session_state:
+        st.info(st.session_state["source_preservation_note"])
 
 
 def main() -> None:
@@ -135,17 +129,30 @@ def main() -> None:
                 resume_text = extract_resume_text(resume_file.getvalue(), resume_file.name)
             with st.spinner("Analyzing fit with Groq..."):
                 result = analyze_resume(resume_text, job_description, api_key, model)
-            with st.spinner("Automatically creating your improved resume..."):
-                structured_resume = create_improved_resume(resume_text, job_description, api_key, model)
-                improved_resume_docx = create_docx(structured_resume)
-                improved_resume_pdf = create_pdf(structured_resume)
+            improved_resume_docx = None
+            source_preservation_note = ""
+            if resume_file.name.lower().endswith(".docx"):
+                with st.spinner("Updating only the existing Skills section..."):
+                    additions = create_resume_additions(resume_text, job_description, api_key, model)
+                    improved_resume_docx = update_docx_resume(resume_file.getvalue(), additions["skills_to_add"])
+            else:
+                source_preservation_note = (
+                    "Exact layout preservation is available for DOCX resumes. "
+                    "Please upload the original DOCX file to keep its photo, fonts, colors, and pages unchanged."
+                )
             st.session_state["analysis"] = result
             st.session_state["resume_text"] = resume_text
             st.session_state["job_description"] = job_description
-            st.session_state["improved_resume_docx"] = improved_resume_docx
-            st.session_state["improved_resume_pdf"] = improved_resume_pdf
+            if improved_resume_docx:
+                st.session_state["improved_resume_docx"] = improved_resume_docx
+                st.session_state.pop("source_preservation_note", None)
+            else:
+                st.session_state.pop("improved_resume_docx", None)
+                st.session_state["source_preservation_note"] = source_preservation_note
         except ResumeParseError as error:
             st.error(f"Could not read the resume: {error}")
+        except ResumeUpdateError as error:
+            st.error(f"The original resume was kept unchanged: {error}")
         except AnalysisError as error:
             st.error(f"Analysis could not be completed: {error}")
 
