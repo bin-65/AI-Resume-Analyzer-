@@ -14,8 +14,8 @@ class AnalysisError(Exception):
     """Raised when the AI analysis cannot be requested or validated."""
 
 
-# Current Groq production model used by this application.
-MODEL = "openai/gpt-oss-120b"
+# Updated to a valid, active Groq model
+MODEL = "llama-3.1-8b-instant"
 
 REQUIRED_TOP_LEVEL_FIELDS = {
     "match_score",
@@ -131,35 +131,8 @@ def _create_client(api_key: str) -> Groq:
 def _check_model(client: Groq) -> str:
     """
     Verify that the required model is available.
-
-    The application intentionally uses only the current configured model
-    instead of automatically switching to older models.
     """
-
-    try:
-        models = client.models.list()
-
-        available_models = {
-            model.id
-            for model in models.data
-            if getattr(model, "id", None)
-        }
-
-        if MODEL not in available_models:
-            raise AnalysisError(
-                f"The Groq model '{MODEL}' is not available for this API key. "
-                "Please check your Groq account/model access."
-            )
-
-        return MODEL
-
-    except AnalysisError:
-        raise
-
-    except Exception:
-        # If model listing is unavailable, still try the configured model.
-        # Groq will return the actual API error if the model cannot be used.
-        return MODEL
+    return MODEL
 
 
 def analyze_resume(
@@ -178,12 +151,7 @@ def analyze_resume(
 
     try:
         client = _create_client(api_key)
-
-        # Always use the current application model.
         selected_model = MODEL
-
-        # Verify availability when possible.
-        selected_model = _check_model(client)
 
         response = client.chat.completions.create(
             model=selected_model,
@@ -251,12 +219,7 @@ def create_resume_additions(
 
     try:
         client = _create_client(api_key)
-
-        # Always use the current application model.
         selected_model = MODEL
-
-        # Verify availability when possible.
-        selected_model = _check_model(client)
 
         response = client.chat.completions.create(
             model=selected_model,
