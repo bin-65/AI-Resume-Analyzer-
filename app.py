@@ -20,98 +20,100 @@ from resume_parser import (
 load_dotenv()
 
 
-# ---------------------------------------------------------
-# GROQ API KEY
-# ---------------------------------------------------------
+# =========================================================
+# GROQ CONFIGURATION
+# =========================================================
+
+# IMPORTANT:
+# Do NOT change this model.
+# llama-3.3-70b-versatile is no longer available for
+# free/developer-tier usage.
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+
 def _get_groq_api_key() -> str | None:
     """
     Read the Groq API key from Streamlit Secrets first,
-    then fall back to the local .env file.
+    then from the local .env file.
     """
+
     try:
-        return st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+        return (
+            st.secrets.get("GROQ_API_KEY")
+            or os.getenv("GROQ_API_KEY")
+        )
+
     except FileNotFoundError:
         return os.getenv("GROQ_API_KEY")
 
 
-# ---------------------------------------------------------
-# GROQ MODEL
-# ---------------------------------------------------------
 def _get_groq_model() -> str:
     """
-    Return a currently supported Groq model.
+    Always use the current supported Groq model.
 
-    If the old/deprecated llama-3.3-70b-versatile model is
-    found in Secrets or .env, automatically replace it with
-    openai/gpt-oss-120b.
-
-    This prevents the old model ID from being sent to Groq.
+    We intentionally DO NOT read GROQ_MODEL from Secrets
+    or .env because an old value such as
+    llama-3.3-70b-versatile could cause a 404 error.
     """
 
-    # Current recommended production model
-    default_model = "openai/gpt-oss-120b"
-
-    # Models that should NOT be used anymore
-    deprecated_models = {
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "qwen/qwen3-32b",
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "moonshotai/kimi-k2-instruct-0905",
-        "deepseek-r1-distill-llama-70b",
-    }
-
-    try:
-        configured_model = (
-            st.secrets.get("GROQ_MODEL")
-            or os.getenv("GROQ_MODEL")
-        )
-    except FileNotFoundError:
-        configured_model = os.getenv("GROQ_MODEL")
-
-    # No model configured
-    if not configured_model:
-        return default_model
-
-    # Automatically replace deprecated model
-    if configured_model.strip() in deprecated_models:
-        return default_model
-
-    return configured_model.strip()
+    return GROQ_MODEL
 
 
-# ---------------------------------------------------------
-# DISPLAY TAGS
-# ---------------------------------------------------------
+# =========================================================
+# TAG DISPLAY
+# =========================================================
+
 def _tags(values: list[str]) -> None:
+
     if values:
-        st.write(" · ".join(f"`{value}`" for value in values))
+        st.write(
+            " · ".join(
+                f"`{value}`"
+                for value in values
+            )
+        )
+
     else:
         st.caption("None identified")
 
 
-# ---------------------------------------------------------
-# DISPLAY LIST SECTION
-# ---------------------------------------------------------
-def _list_section(title: str, values: list[str]) -> None:
+# =========================================================
+# LIST SECTION
+# =========================================================
+
+def _list_section(
+    title: str,
+    values: list[str]
+) -> None:
+
     st.subheader(title)
 
     if values:
+
         for value in values:
-            st.markdown(f"- {value}")
+            st.markdown(
+                f"- {value}"
+            )
+
     else:
-        st.caption("None identified")
+        st.caption(
+            "None identified"
+        )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # SHOW ANALYSIS RESULTS
-# ---------------------------------------------------------
-def _show_results(result: dict[str, Any]) -> None:
+# =========================================================
+
+def _show_results(
+    result: dict[str, Any]
+) -> None:
 
     score = result["match_score"]
 
-    st.header("Analysis result")
+    st.header(
+        "Analysis result"
+    )
 
     left, middle, right = st.columns(3)
 
@@ -130,7 +132,9 @@ def _show_results(result: dict[str, Any]) -> None:
         f"{result['ats_keywords']['coverage_percent']}%"
     )
 
-    st.progress(score["overall"] / 100)
+    st.progress(
+        score["overall"] / 100
+    )
 
     st.write(
         result["final_result"]["summary"]
@@ -138,13 +142,16 @@ def _show_results(result: dict[str, Any]) -> None:
 
     st.caption(
         f"Analysis model: "
-        f"{result.get('model_used', 'Groq')}"
+        f"{result.get('model_used', GROQ_MODEL)}"
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # SCORE BREAKDOWN
-    # -----------------------------------------------------
-    st.subheader("Score breakdown")
+    # =====================================================
+
+    st.subheader(
+        "Score breakdown"
+    )
 
     breakdown = score["breakdown"]
 
@@ -163,9 +170,10 @@ def _show_results(result: dict[str, Any]) -> None:
         use_container_width=True,
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # MATCHING / MISSING SKILLS
-    # -----------------------------------------------------
+    # =====================================================
+
     first, second = st.columns(2)
 
     with first:
@@ -192,32 +200,39 @@ def _show_results(result: dict[str, Any]) -> None:
             result["ats_keywords"]["missing"]
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # PROBLEMS
-    # -----------------------------------------------------
+    # =====================================================
+
     _list_section(
         "Problems to address",
         result["problems"]
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # RECOMMENDATIONS
-    # -----------------------------------------------------
+    # =====================================================
+
     _list_section(
         "Recommendations",
         result["recommendations"]
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # STRUCTURED JSON
-    # -----------------------------------------------------
-    with st.expander("View structured JSON"):
+    # =====================================================
+
+    with st.expander(
+        "View structured JSON"
+    ):
+
         st.json(result)
 
 
-# ---------------------------------------------------------
+# =========================================================
 # IMPROVED RESUME SECTION
-# ---------------------------------------------------------
+# =========================================================
+
 def _improved_resume_section() -> None:
     """
     Show the source-preserving DOCX download after analysis.
@@ -260,23 +275,26 @@ def _improved_resume_section() -> None:
         )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # MAIN APPLICATION
-# ---------------------------------------------------------
+# =========================================================
+
 def main() -> None:
 
-    # -----------------------------------------------------
+    # =====================================================
     # PAGE CONFIGURATION
-    # -----------------------------------------------------
+    # =====================================================
+
     st.set_page_config(
         page_title="AI Resume Analyzer",
         page_icon="📄",
         layout="wide",
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # TITLE
-    # -----------------------------------------------------
+    # =====================================================
+
     st.title(
         "AI Resume Analyzer"
     )
@@ -286,18 +304,30 @@ def main() -> None:
         "and receive structured, evidence-based feedback."
     )
 
-    # -----------------------------------------------------
-    # API + MODEL
-    # -----------------------------------------------------
+    # =====================================================
+    # API KEY
+    # =====================================================
+
     api_key = _get_groq_api_key()
 
-    # This automatically converts old/deprecated
-    # model names to the current model.
+    # =====================================================
+    # MODEL
+    # =====================================================
+
+    # IMPORTANT:
+    # This ALWAYS returns openai/gpt-oss-120b.
+    #
+    # Even if Streamlit Secrets contains:
+    #
+    # GROQ_MODEL = "llama-3.3-70b-versatile"
+    #
+    # it will NOT be used.
     model = _get_groq_model()
 
-    # -----------------------------------------------------
+    # =====================================================
     # API KEY WARNING
-    # -----------------------------------------------------
+    # =====================================================
+
     if not api_key:
 
         st.warning(
@@ -306,14 +336,17 @@ def main() -> None:
             "before analyzing a resume."
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # ANALYSIS FORM
-    # -----------------------------------------------------
-    with st.form("analysis_form"):
+    # =====================================================
+
+    with st.form(
+        "analysis_form"
+    ):
 
         resume_file = st.file_uploader(
             "Upload resume",
-            type=supported_file_types(),
+            type=supported_file_types()
         )
 
         job_description = st.text_area(
@@ -329,14 +362,16 @@ def main() -> None:
             type="primary",
         )
 
-    # -----------------------------------------------------
-    # SUBMIT
-    # -----------------------------------------------------
+    # =====================================================
+    # ANALYSIS EXECUTION
+    # =====================================================
+
     if submitted:
 
         # -------------------------------------------------
-        # VALIDATE INPUT
+        # INPUT VALIDATION
         # -------------------------------------------------
+
         if (
             not resume_file
             or not job_description.strip()
@@ -349,8 +384,9 @@ def main() -> None:
             return
 
         # -------------------------------------------------
-        # VALIDATE API KEY
+        # API KEY VALIDATION
         # -------------------------------------------------
+
         if not api_key:
 
             st.error(
@@ -360,20 +396,12 @@ def main() -> None:
 
             return
 
-        # -------------------------------------------------
-        # SHOW ACTIVE MODEL
-        # -------------------------------------------------
-        # This is only informational.
-        # It does NOT change the existing UI structure.
-        st.caption(
-            f"Using Groq model: `{model}`"
-        )
-
         try:
 
-            # ---------------------------------------------
+            # =============================================
             # EXTRACT RESUME TEXT
-            # ---------------------------------------------
+            # =============================================
+
             with st.spinner(
                 "Extracting resume text..."
             ):
@@ -383,13 +411,19 @@ def main() -> None:
                     resume_file.name,
                 )
 
-            # ---------------------------------------------
+            # =============================================
             # ANALYZE RESUME
-            # ---------------------------------------------
+            # =============================================
+
             with st.spinner(
                 "Analyzing fit with Groq..."
             ):
 
+                # IMPORTANT:
+                # model is ALWAYS:
+                #
+                # openai/gpt-oss-120b
+                #
                 result = analyze_resume(
                     resume_text,
                     job_description,
@@ -397,16 +431,18 @@ def main() -> None:
                     model,
                 )
 
-            # ---------------------------------------------
-            # IMPROVED RESUME
-            # ---------------------------------------------
+            # =============================================
+            # UPDATED RESUME
+            # =============================================
+
             improved_resume_docx = None
 
             source_preservation_note = ""
 
-            # ---------------------------------------------
+            # =============================================
             # DOCX RESUME
-            # ---------------------------------------------
+            # =============================================
+
             if resume_file.name.lower().endswith(
                 ".docx"
             ):
@@ -425,25 +461,29 @@ def main() -> None:
                     improved_resume_docx = (
                         update_docx_resume(
                             resume_file.getvalue(),
-                            additions["skills_to_add"],
+                            additions[
+                                "skills_to_add"
+                            ],
                         )
                     )
 
-            # ---------------------------------------------
+            # =============================================
             # NON-DOCX RESUME
-            # ---------------------------------------------
+            # =============================================
+
             else:
 
                 source_preservation_note = (
                     "Exact layout preservation is available "
-                    "for DOCX resumes. Please upload the "
-                    "original DOCX file to keep its photo, "
-                    "fonts, colors, and pages unchanged."
+                    "for DOCX resumes. Please upload the original "
+                    "DOCX file to keep its photo, fonts, colors, "
+                    "and pages unchanged."
                 )
 
-            # ---------------------------------------------
+            # =============================================
             # SAVE ANALYSIS
-            # ---------------------------------------------
+            # =============================================
+
             st.session_state[
                 "analysis"
             ] = result
@@ -456,9 +496,10 @@ def main() -> None:
                 "job_description"
             ] = job_description
 
-            # ---------------------------------------------
+            # =============================================
             # SAVE UPDATED DOCX
-            # ---------------------------------------------
+            # =============================================
+
             if improved_resume_docx:
 
                 st.session_state[
@@ -481,18 +522,20 @@ def main() -> None:
                     "source_preservation_note"
                 ] = source_preservation_note
 
-        # -------------------------------------------------
+        # =================================================
         # RESUME PARSING ERROR
-        # -------------------------------------------------
+        # =================================================
+
         except ResumeParseError as error:
 
             st.error(
                 f"Could not read the resume: {error}"
             )
 
-        # -------------------------------------------------
+        # =================================================
         # DOCX UPDATE ERROR
-        # -------------------------------------------------
+        # =================================================
+
         except ResumeUpdateError as error:
 
             st.error(
@@ -500,29 +543,29 @@ def main() -> None:
                 f"{error}"
             )
 
-        # -------------------------------------------------
+        # =================================================
         # GROQ ANALYSIS ERROR
-        # -------------------------------------------------
+        # =================================================
+
         except AnalysisError as error:
 
             error_text = str(error)
 
-            # If an old/deprecated model is somehow still
-            # hardcoded in another module, give a useful
-            # message instead of hiding the actual problem.
+            # -------------------------------------------------
+            # OLD MODEL ERROR
+            # -------------------------------------------------
+
             if (
                 "llama-3.3-70b-versatile"
                 in error_text
             ):
 
                 st.error(
-                    "The old Groq model "
-                    "`llama-3.3-70b-versatile` "
-                    "is still being used inside another "
-                    "application file. Please make sure "
-                    "`analyzer.py` does not hardcode this "
-                    "model name. The current model is "
-                    "`openai/gpt-oss-120b`."
+                    "The old Groq model is still being "
+                    "used inside analyzer.py. Please make "
+                    "sure analyzer.py uses the model value "
+                    "passed from app.py instead of hardcoding "
+                    "`llama-3.3-70b-versatile`."
                 )
 
             else:
@@ -532,20 +575,24 @@ def main() -> None:
                     f"{error}"
                 )
 
-    # -----------------------------------------------------
+    # =====================================================
     # DISPLAY RESULTS
-    # -----------------------------------------------------
+    # =====================================================
+
     if "analysis" in st.session_state:
 
         _show_results(
-            st.session_state["analysis"]
+            st.session_state[
+                "analysis"
+            ]
         )
 
         _improved_resume_section()
 
 
-# ---------------------------------------------------------
+# =========================================================
 # APPLICATION ENTRY POINT
-# ---------------------------------------------------------
+# =========================================================
+
 if __name__ == "__main__":
     main()
