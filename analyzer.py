@@ -14,7 +14,7 @@ class AnalysisError(Exception):
     """Raised when the AI analysis cannot be requested or validated."""
 
 
-# Updated to a valid, active Groq model
+# Current Groq production model used by this application.
 MODEL = "llama-3.1-8b-instant"
 
 REQUIRED_TOP_LEVEL_FIELDS = {
@@ -128,13 +128,6 @@ def _create_client(api_key: str) -> Groq:
         ) from error
 
 
-def _check_model(client: Groq) -> str:
-    """
-    Verify that the required model is available.
-    """
-    return MODEL
-
-
 def analyze_resume(
     resume_text: str,
     job_description: str,
@@ -151,6 +144,8 @@ def analyze_resume(
 
     try:
         client = _create_client(api_key)
+
+        # STRICT OVERRIDE: Ignore any old/invalid model passed from outside
         selected_model = MODEL
 
         response = client.chat.completions.create(
@@ -219,6 +214,8 @@ def create_resume_additions(
 
     try:
         client = _create_client(api_key)
+
+        # STRICT OVERRIDE: Ignore any old/invalid model passed from outside
         selected_model = MODEL
 
         response = client.chat.completions.create(
