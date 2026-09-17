@@ -24,11 +24,8 @@ load_dotenv()
 # GROQ CONFIGURATION
 # =========================================================
 
-# IMPORTANT:
-# Do NOT change this model.
-# llama-3.3-70b-versatile is no longer available for
-# free/developer-tier usage.
-GROQ_MODEL = "openai/gpt-oss-120b"
+# Updated to a valid, active Groq model
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 
 def _get_groq_api_key() -> str | None:
@@ -50,10 +47,6 @@ def _get_groq_api_key() -> str | None:
 def _get_groq_model() -> str:
     """
     Always use the current supported Groq model.
-
-    We intentionally DO NOT read GROQ_MODEL from Secrets
-    or .env because an old value such as
-    llama-3.3-70b-versatile could cause a 404 error.
     """
 
     return GROQ_MODEL
@@ -314,14 +307,6 @@ def main() -> None:
     # MODEL
     # =====================================================
 
-    # IMPORTANT:
-    # This ALWAYS returns openai/gpt-oss-120b.
-    #
-    # Even if Streamlit Secrets contains:
-    #
-    # GROQ_MODEL = "llama-3.3-70b-versatile"
-    #
-    # it will NOT be used.
     model = _get_groq_model()
 
     # =====================================================
@@ -419,11 +404,6 @@ def main() -> None:
                 "Analyzing fit with Groq..."
             ):
 
-                # IMPORTANT:
-                # model is ALWAYS:
-                #
-                # openai/gpt-oss-120b
-                #
                 result = analyze_resume(
                     resume_text,
                     job_description,
@@ -549,31 +529,10 @@ def main() -> None:
 
         except AnalysisError as error:
 
-            error_text = str(error)
-
-            # -------------------------------------------------
-            # OLD MODEL ERROR
-            # -------------------------------------------------
-
-            if (
-                "llama-3.3-70b-versatile"
-                in error_text
-            ):
-
-                st.error(
-                    "The old Groq model is still being "
-                    "used inside analyzer.py. Please make "
-                    "sure analyzer.py uses the model value "
-                    "passed from app.py instead of hardcoding "
-                    "`llama-3.3-70b-versatile`."
-                )
-
-            else:
-
-                st.error(
-                    f"Analysis could not be completed: "
-                    f"{error}"
-                )
+            st.error(
+                f"Analysis could not be completed: "
+                f"{error}"
+            )
 
     # =====================================================
     # DISPLAY RESULTS
